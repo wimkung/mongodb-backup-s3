@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  mongodbbackup:
+    build:
+      dockerfile: Dockerfile
+      context: ./
+    secrets:
+      - BACKUP_PRIV
+      - BACKUP_PUB
+    environment:
+      - AWS_ACCESS_KEY_ID=
+      - AWS_SECRET_ACCESS_KEY=
+      - BUCKET_REGION=
+      - BUCKET=
+      - BACKUP_FOLDER=
+      - INIT_BACKUP=
+      - MONGODB_HOST=
+      - MONGODB_PORT=
+      - MONGODB_DB=
+      - BACKUP_PRIVATE_KEY=/run/secrets/BACKUP_PRIV
+      - BACKUP_PUBLIC_KEY=/run/secrets/BACKUP_PUB
+
+secrets:
+  BACKUP_PRIV:
+    external: true
+  BACKUP_PUB:
+    external: true
