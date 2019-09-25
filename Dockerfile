@@ -18,7 +18,7 @@ RUN apk -v --update add \
 
 RUN mkdir -p /var/log/cron && mkdir -m 0644 -p /var/spool/cron/crontabs && touch /var/log/cron/cron.log && mkdir -m 0644 -p /etc/cron.d
 
-ENV CRON_TIME="0 3 * * *" \
+ENV CRON_TIME="0 3,15 * * *" \
   TZ=Europe/Berlin \
   CRON_TZ=Europe/Berlin
 
