@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo.
 
 ## What this project is
 
-A single Docker image that runs `cron` → `mongodump --archive --gzip` → `openssl smime -aes256` (asymmetric) → `aws s3 cp`. Restore reverses the pipeline with the RSA private key. There is **no application code** — everything is shell + Docker.
+A single Docker image that runs `cron` → `mongodump --archive --gzip` → `openssl cms -encrypt -aes256 -stream` (asymmetric) → `aws s3 cp`. Restore reverses the pipeline with the RSA private key. There is **no application code** — everything is shell + Docker.
 
 Key files (whole codebase):
 - `Dockerfile` — `debian:bookworm-slim` + MongoDB Database Tools `100.x` (official `.deb`) + AWS CLI v2. Multi-arch via `TARGETARCH` → `MDB_DISTRO`/`MDB_ARCH`/`AWS_ARCH` mapping (`amd64→debian12/x86_64/x86_64`, `arm64→ubuntu2204/arm64/aarch64`). Note: mongodb.org doesn't publish a `debian12-arm64` `.deb`, so arm64 pulls the `ubuntu2204-arm64` build (ABI-compatible with bookworm).
@@ -18,7 +18,7 @@ Key files (whole codebase):
    - Escaped with `\$` so they expand at **run time**: `\${TIMESTAMP}`, `\${BACKUP_NAME}`, `\${BACKUP_PUBLIC_KEY}`, `\${BACKUP_PRIVATE_KEY}`, `\${1}`. Preserve this split when modifying — flipping it breaks cron runs silently.
 2. **Cron loses the environment.** `run.sh` snapshots only `AWS*` vars via `printenv | sed ... | grep -E "^export AWS" > /root/project_env.sh` and the crontab sources that file. Any new runtime variable the backup script needs at cron time must also be written into `project_env.sh` (extend the `grep -E` filter) **or** baked into the generated script at generation time.
 3. **Connection-string precedence.** `MONGODB_URI` wins; when unset, discrete `MONGODB_HOST/PORT/USER/PASS/AUTH_DB` are used, with legacy Docker link fallbacks (`MONGODB_PORT_27017_TCP_ADDR`, `MONGODB_PORT_1_27017_TCP_PORT`, `MONGODB_ENV_MONGODB_USER`, …). Keep both paths working.
-4. **Encryption is asymmetric S/MIME**, not symmetric. Backup uses `openssl smime -encrypt -aes256 -binary -outform DEM` with an X.509 cert (`BACKUP_PUBLIC_KEY`); restore uses `-decrypt -inform DEM -inkey $BACKUP_PRIVATE_KEY`. Uploaded objects are `backup_<UTC-ish timestamp>.dump.gz.ssl` plus a rolling `latest.dump.gz.ssl` under `s3://$BUCKET/$BACKUP_FOLDER`.
+4. **Encryption is asymmetric CMS/PKCS#7**, not symmetric. Backup uses `openssl cms -encrypt -aes256 -binary -stream -outform DER` with an X.509 cert (`BACKUP_PUBLIC_KEY`); restore uses `openssl cms -decrypt -inform DER -inkey $BACKUP_PRIVATE_KEY`. `-stream` is required — without it openssl buffers the whole dump in memory and fails with `BUF_MEM_grow_clean:malloc failure` on multi-GB dumps. `cms -decrypt` is backward-compatible with older `smime -encrypt … -outform DEM` archives, so historical backups remain restorable. Uploaded objects are `backup_<UTC-ish timestamp>.dump.gz.ssl` plus a rolling `latest.dump.gz.ssl` under `s3://$BUCKET/$BACKUP_FOLDER`.
 5. **SigV4 is set per invocation** inside the generated scripts via `aws configure set default.s3.signature_version s3v4` — required for non–`us-east-1` buckets. Don't remove it.
 6. **Lifecycle flags** in `run.sh`: `INIT_BACKUP` / `INIT_RESTORE` trigger a one-shot at startup; `DISABLE_CRON` skips installing the crontab entirely (and therefore skips the `tail -f`, so the container exits — this is intentional for one-shot restore jobs).
 7. **Dual cron binary support.** `run.sh` prefers `cron` (Debian) and falls back to `crond` (Alpine) so the script stays portable if the base image ever changes.

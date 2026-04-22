@@ -12,7 +12,7 @@ Restore is performed with the matching private key.
 
 - Scheduled backups via `cron` (`CRON_TIME`, default `0 3,15 * * *`).
 - Streamed `mongodump --archive --gzip` dumps (compressed).
-- Asymmetric encryption of each dump with `openssl smime -aes256` — only the
+- Asymmetric encryption of each dump with `openssl cms -aes256` (streamed) — only the
   holder of the private key can restore.
 - Uploads both a timestamped archive (`backup_YYYYMMDDTHHMMSS.dump.gz.ssl`) and
   a rolling `latest.dump.gz.ssl` to S3.
@@ -46,7 +46,7 @@ and keep the private key somewhere safe (you need it to restore):
 # private key (keep secret!)
 openssl genrsa -out backup.key 4096
 
-# self-signed certificate used as the public key for smime -encrypt
+# self-signed certificate used as the public key for cms -encrypt
 openssl req -x509 -key backup.key -out backup.crt -days 3650 -subj "/CN=mongo-backup"
 ```
 
@@ -257,8 +257,8 @@ own `mongorestore`:
 ```bash
 aws s3 cp s3://my-s3-bucket/prod/mongo/latest.dump.gz.ssl ./latest.dump.gz.ssl
 
-openssl smime -decrypt \
-  -in latest.dump.gz.ssl -binary -inform DEM \
+openssl cms -decrypt \
+  -in latest.dump.gz.ssl -binary -inform DER \
   -inkey backup.key \
   -out latest.dump.gz
 
