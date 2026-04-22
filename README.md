@@ -1,143 +1,336 @@
 # mongodb-backup-s3
 
-This image runs mongodump to backup data using cronjob to an s3 bucket
+A Docker image that runs scheduled `mongodump` backups, encrypts them with an
+OpenSSL public key, and uploads the resulting archive to an Amazon S3 bucket.
+Restore is performed with the matching private key.
 
-## Forked from [halvves/mongodb-backup-s3](https://github.com/halvves/mongodb-backup-s3)
+> Forked from [halvves/mongodb-backup-s3](https://github.com/halvves/mongodb-backup-s3)
+> with added support for AWS Signature Version 4 and asymmetric (OpenSSL S/MIME)
+> encryption of the backup archives.
 
-Added support for AWS S3 v4 authorization mechanism for those who are experiencing error:
+## Features
 
+- Scheduled backups via `cron` (`CRON_TIME`, default `0 3,15 * * *`).
+- Streamed `mongodump --archive --gzip` dumps (compressed).
+- Asymmetric encryption of each dump with `openssl smime -aes256` — only the
+  holder of the private key can restore.
+- Uploads both a timestamped archive (`backup_YYYYMMDDTHHMMSS.dump.gz.ssl`) and
+  a rolling `latest.dump.gz.ssl` to S3.
+- Optional run-once backup (`INIT_BACKUP`) or restore (`INIT_RESTORE`) on
+  container start.
+- Helper scripts: `backup`, `restore`, `listbackups`.
+- Supports AWS S3 Signature v4 (fixes `AWS4-HMAC-SHA256` errors).
+- Supports linked MongoDB containers — auto-detects host/port from the legacy
+  Docker `*_PORT_27017_TCP_*` env vars.
+- `MONGODB_URI` for modern setups (replica sets, `mongodb+srv://`, Atlas, TLS).
+
+## Compatibility
+
+| Component | Version |
+| --- | --- |
+| Base image | `debian:bookworm-slim` |
+| MongoDB Database Tools | `100.10.0` (override with `--build-arg MONGO_TOOLS_VERSION=…`) |
+| MongoDB server | **4.4 – 8.x**, including **8.2** |
+| AWS CLI | v2 (official bundle, `x86_64` + `aarch64`) |
+
+> MongoDB's official `mongodump` / `mongorestore` are shipped as the
+> `mongodb-database-tools` package on the `100.x` release line, which MongoDB
+> supports against server versions 4.4 through the current 8.x series.
+
+## Generating the encryption key pair
+
+The image encrypts backups with an X.509 / RSA key pair. Generate one **once**
+and keep the private key somewhere safe (you need it to restore):
+
+```bash
+# private key (keep secret!)
+openssl genrsa -out backup.key 4096
+
+# self-signed certificate used as the public key for smime -encrypt
+openssl req -x509 -key backup.key -out backup.crt -days 3650 -subj "/CN=mongo-backup"
 ```
-A client error (InvalidRequest) occurred when calling the PutObject operation: The authorization mechanism you have provided is not supported. Please use AWS4-HMAC-SHA256.
-```
 
-Play well with this docker [nginx-letsencrypt-mongo-portainer](https://github.com/deenoize/nginx-mongo-docker) setup
+Mount `backup.crt` inside the container and point `BACKUP_PUBLIC_KEY` at it
+(used for encryption during backup). For restore, mount `backup.key` and set
+`BACKUP_PRIVATE_KEY`.
 
-## Usage:
+## Quick start
 
-```
+### Against a replica set / Atlas / TLS (recommended for MongoDB 5.0+)
+
+Use `MONGODB_URI` — it's passed through verbatim as `mongodump --uri=…`, so any
+valid connection string works (including `mongodb+srv://`, `tls=true`, auth
+source, read preference, etc.):
+
+```bash
 docker run -d \
-  --env AWS_ACCESS_KEY_ID=awsaccesskeyid \
-  --env AWS_SECRET_ACCESS_KEY=awssecretaccesskey \
-  --env BUCKET=mybucketname
-  --env MONGODB_HOST=mongodb.host \
-  --env MONGODB_PORT=27017 \
-  --env MONGODB_USER=admin \
-  --env MONGODB_PASS=password \
+  --name mongodb-backup-s3 \
+  -e AWS_ACCESS_KEY_ID=... \
+  -e AWS_SECRET_ACCESS_KEY=... \
+  -e BUCKET=my-s3-bucket \
+  -e BUCKET_REGION=us-east-1 \
+  -e BACKUP_FOLDER=prod/mongo/ \
+  -e MONGODB_URI='mongodb+srv://backup:secret@cluster0.abcd.mongodb.net/?retryWrites=true&w=majority&authSource=admin' \
+  -e BACKUP_PUBLIC_KEY=/keys/backup.crt \
+  -v $(pwd)/backup.crt:/keys/backup.crt:ro \
   deenoize/mongodb-backup-s3
 ```
 
-If you link `deenoize/mongodb-backup-s3` to a mongodb container with an alias named mongodb, this image will try to auto load the `host`, `port`, `user`, `pass` if possible. Like this:
+### Against a single host (legacy / self-hosted)
 
-```
+```bash
 docker run -d \
-  --env AWS_ACCESS_KEY_ID=myaccesskeyid \
-  --env AWS_SECRET_ACCESS_KEY=mysecretaccesskey \
-  --env BUCKET=mybucketname \
-  --env BACKUP_FOLDER=a/sub/folder/path/ \
-  --env INIT_BACKUP=true \
+  --name mongodb-backup-s3 \
+  -e AWS_ACCESS_KEY_ID=... \
+  -e AWS_SECRET_ACCESS_KEY=... \
+  -e BUCKET=my-s3-bucket \
+  -e BUCKET_REGION=us-east-1 \
+  -e BACKUP_FOLDER=prod/mongo/ \
+  -e MONGODB_HOST=mongodb \
+  -e MONGODB_PORT=27017 \
+  -e MONGODB_USER=admin \
+  -e MONGODB_PASS=secret \
+  -e MONGODB_AUTH_DB=admin \
+  -e BACKUP_PUBLIC_KEY=/keys/backup.crt \
+  -v $(pwd)/backup.crt:/keys/backup.crt:ro \
+  deenoize/mongodb-backup-s3
+```
+
+If you link a MongoDB container with alias `mongodb`, the image auto-detects
+host/port:
+
+```bash
+docker run -d \
   --link my_mongo_db:mongodb \
+  -e AWS_ACCESS_KEY_ID=... \
+  -e AWS_SECRET_ACCESS_KEY=... \
+  -e BUCKET=my-s3-bucket \
+  -e BACKUP_FOLDER=prod/mongo/ \
+  -e INIT_BACKUP=true \
+  -e BACKUP_PUBLIC_KEY=/keys/backup.crt \
+  -v $(pwd)/backup.crt:/keys/backup.crt:ro \
   deenoize/mongodb-backup-s3
 ```
 
-If your bucket in not standard region and you get `A client error (PermanentRedirect) occurred when calling the PutObject operation: The bucket you are attempting to access must be addressed using the specified endpoint. Please send all future requests to this endpoint` use BUCKET_REGION env var like this:
+## docker-compose
 
-```
-docker run -d \
-  --env AWS_ACCESS_KEY_ID=myaccesskeyid \
-  --env AWS_SECRET_ACCESS_KEY=mysecretaccesskey \
-  --env BUCKET=mybucketname \
-  --env BUCKET_REGION=mybucketregion \
-  --env BACKUP_FOLDER=a/sub/folder/path/ \
-  --env INIT_BACKUP=true \
-  --link my_mongo_db:mongodb \
-  deenoize/mongodb-backup-s3
+Automated scheduled backups using Docker secrets for the key material:
+
+```yaml
+version: '3'
+
+services:
+  mongodbbackup:
+    image: deenoize/mongodb-backup-s3:latest
+    restart: always
+    secrets:
+      - BACKUP_PRIV
+      - BACKUP_PUB
+    environment:
+      - AWS_ACCESS_KEY_ID=...
+      - AWS_SECRET_ACCESS_KEY=...
+      - BUCKET_REGION=us-east-1
+      - BUCKET=my-s3-bucket
+      - BACKUP_FOLDER=prod/mongo/
+      - MONGODB_HOST=mongodb
+      - MONGODB_PORT=27017
+      - MONGODB_DB=
+      - INIT_BACKUP=
+      - BACKUP_PRIVATE_KEY=/run/secrets/BACKUP_PRIV
+      - BACKUP_PUBLIC_KEY=/run/secrets/BACKUP_PUB
+
+secrets:
+  BACKUP_PRIV:
+    external: true
+  BACKUP_PUB:
+    external: true
 ```
 
-Add to a docker-compose.yml to enhance your robotic army:
+Seed / restore a fresh instance using `INIT_RESTORE` + `DISABLE_CRON`:
 
-For automated backups
-```
+```yaml
 mongodbbackup:
-  image: 'deenoize/mongodb-backup-s3:latest'
-  links:
-    - mongodb
+  image: deenoize/mongodb-backup-s3:latest
   environment:
-    - AWS_ACCESS_KEY_ID=myaccesskeyid
-    - AWS_SECRET_ACCESS_KEY=mysecretaccesskey
+    - AWS_ACCESS_KEY_ID=...
+    - AWS_SECRET_ACCESS_KEY=...
     - BUCKET=my-s3-bucket
-    - BACKUP_FOLDER=prod/db/
-  restart: always
-```
-
-Or use `INIT_RESTORE` with `DISABLE_CRON` for seeding/restoring/starting a db (great for a fresh instance or a dev machine)
-```
-mongodbbackup:
-  image: 'deenoize/mongodb-backup-s3:latest'
-  links:
-    - mongodb
-  environment:
-    - AWS_ACCESS_KEY_ID=myaccesskeyid
-    - AWS_SECRET_ACCESS_KEY=mysecretaccesskey
-    - BUCKET=my-s3-bucket
-    - BACKUP_FOLDER=prod/db/
+    - BACKUP_FOLDER=prod/mongo/
     - INIT_RESTORE=true
     - DISABLE_CRON=true
+    - BACKUP_PRIVATE_KEY=/run/secrets/BACKUP_PRIV
+  secrets:
+    - BACKUP_PRIV
 ```
 
-## Parameters
+## Environment variables
 
-`AWS_ACCESS_KEY_ID` - your aws access key id (for your s3 bucket)
+### AWS / S3
 
-`AWS_SECRET_ACCESS_KEY`: - your aws secret access key (for your s3 bucket)
+| Variable | Description |
+| --- | --- |
+| `AWS_ACCESS_KEY_ID` | AWS access key with `s3:PutObject` / `s3:GetObject` on the bucket. |
+| `AWS_SECRET_ACCESS_KEY` | Matching secret key. |
+| `BUCKET` | Target S3 bucket name. |
+| `BUCKET_REGION` | Optional. Bucket region (e.g. `us-east-2`). Set this if you see `PermanentRedirect` errors. |
+| `BACKUP_FOLDER` | Optional. Prefix/path inside the bucket (e.g. `myapp/db_backups/`). Defaults to bucket root. |
 
-`BUCKET`: - your s3 bucket
+### MongoDB
 
-`BUCKET_REGION`: - your s3 bucket' region (eg `us-east-2` for Ohio). Optional. Add if you get an error `A client error (PermanentRedirect)`
+You can either pass a full connection string via `MONGODB_URI` **or** use the
+discrete host/port/user/pass variables. If `MONGODB_URI` is set, the discrete
+variables are ignored.
 
-`BACKUP_FOLDER`: - name of folder or path to put backups (eg `myapp/db_backups/`). defaults to root of bucket.
+| Variable | Description |
+| --- | --- |
+| `MONGODB_URI` | Full MongoDB connection string (`mongodb://…` or `mongodb+srv://…`). Takes precedence over host/port/user/pass. Recommended for replica sets, Atlas, and TLS. |
+| `MONGODB_HOST` | Mongo host/IP. Auto-detected from a linked container if not set. |
+| `MONGODB_PORT` | Mongo port. Auto-detected from a linked container if not set. |
+| `MONGODB_USER` | Mongo username. If unset but `MONGODB_PASS` is set, defaults to `admin`. |
+| `MONGODB_PASS` | Mongo password. |
+| `MONGODB_AUTH_DB` | Authentication database. Default: `admin`. |
+| `MONGODB_DB` | Optional. Database to dump. Dumps all databases if unset. |
+| `EXTRA_OPTS` | Optional. Extra flags appended to both `mongodump` and `mongorestore` (e.g. `--tls --tlsCAFile=/keys/ca.pem --numParallelCollections=4`). |
 
-`MONGODB_HOST` - the host/ip of your mongodb database
+### Encryption
 
-`MONGODB_PORT` - the port number of your mongodb database
+| Variable | Description |
+| --- | --- |
+| `BACKUP_PUBLIC_KEY` | Path (inside the container) to the X.509 certificate / public key used to encrypt backups. **Required for `backup.sh`.** |
+| `BACKUP_PRIVATE_KEY` | Path (inside the container) to the matching RSA private key used to decrypt backups. **Required for `restore.sh`.** |
 
-`MONGODB_USER` - the username of your mongodb database. If MONGODB_USER is empty while MONGODB_PASS is not, the image will use admin as the default username
+### Scheduling / lifecycle
 
-`MONGODB_PASS` - the password of your mongodb database
+| Variable | Description |
+| --- | --- |
+| `CRON_TIME` | Cron schedule for backups. Default: `0 3,15 * * *` (03:00 and 15:00 daily). |
+| `TZ` | Container timezone. Default: `Europe/Berlin`. |
+| `CRON_TZ` | Cron timezone. Default: `Europe/Berlin`. |
+| `INIT_BACKUP` | If set (non-empty), run a backup immediately on container start. |
+| `INIT_RESTORE` | If set, restore from the latest backup on container start. |
+| `DISABLE_CRON` | If set, skip installing the cron job (useful for one-shot seed/restore containers). |
 
-`MONGODB_DB` - the database name to dump. If not specified, it will dump all the databases
+## Helper scripts
 
-`EXTRA_OPTS` - any extra options to pass to mongodump command
+The entrypoint generates three scripts and symlinks them onto `PATH`:
 
-`CRON_TIME` - the interval of cron job to run mongodump. `0 3 * * *` by default, which is every day at 03:00hrs.
+| Command | Description |
+| --- | --- |
+| `backup` (`/backup.sh`) | Dump, compress, encrypt, upload as `backup_<timestamp>.dump.gz.ssl` and `latest.dump.gz.ssl`. |
+| `restore [TIMESTAMP]` (`/restore.sh`) | Download, decrypt, and `mongorestore --drop` the given backup (defaults to `latest`). |
+| `listbackups` (`/listbackups.sh`) | `aws s3 ls` the backup folder. |
 
-`TZ` - timezone. default: `US/Eastern`
+### Trigger a backup on demand
 
-`CRON_TZ` - cron timezone. default: `US/Eastern`
-
-`INIT_BACKUP` - if set, create a backup when the container launched
-
-`INIT_RESTORE` - if set, restore from latest when container is launched
-
-`DISABLE_CRON` - if set, it will skip setting up automated backups. good for when you want to use this container to seed a dev environment.
-
-## Restore from a backup
-
-To see the list of backups, you can run:
+```bash
+docker exec mongodb-backup-s3 backup
 ```
-docker exec mongodb-backup-s3 /listbackups.sh
+
+### List available backups
+
+```bash
+docker exec mongodb-backup-s3 listbackups
 ```
 
-To restore database from a certain backup, simply run (pass in just the timestamp part of the filename):
+### Restore
 
-```
-docker exec mongodb-backup-s3 /restore.sh 20170406T155812
+Restore the latest backup:
+
+```bash
+docker exec mongodb-backup-s3 restore
 ```
 
-To restore latest just:
+Restore a specific backup (pass just the timestamp portion of the filename):
+
+```bash
+docker exec mongodb-backup-s3 restore 20260406T155812
 ```
-docker exec mongodb-backup-s3 /restore.sh
+
+> Restore uses `mongorestore --drop`, which **drops each collection before
+> restoring it**. Be careful when pointing this at a live database.
+
+## Decrypting a backup outside the container
+
+You can also decrypt an archive manually with OpenSSL and restore it with your
+own `mongorestore`:
+
+```bash
+aws s3 cp s3://my-s3-bucket/prod/mongo/latest.dump.gz.ssl ./latest.dump.gz.ssl
+
+openssl smime -decrypt \
+  -in latest.dump.gz.ssl -binary -inform DEM \
+  -inkey backup.key \
+  -out latest.dump.gz
+
+mongorestore --gzip --archive=latest.dump.gz --drop
 ```
+
+## Logs
+
+Cron writes backup output to `/mongo_backup.log`, which is tailed as the
+container's foreground process, so `docker logs -f mongodb-backup-s3` shows
+backup activity.
+
+## Building the image locally
+
+```bash
+# default (MongoDB Database Tools 100.10.0, amd64 or arm64 auto-detected)
+docker build -t mongodb-backup-s3:local .
+
+# pin a different tools release
+docker build \
+  --build-arg MONGO_TOOLS_VERSION=100.10.0 \
+  -t mongodb-backup-s3:local .
+```
+
+Verify the bundled tools version after a build:
+
+```bash
+docker run --rm mongodb-backup-s3:local mongodump --version
+docker run --rm mongodb-backup-s3:local aws --version
+```
+
+## Continuous builds (GitHub Actions → Docker Hub)
+
+The repo includes a workflow at
+[`.github/workflows/docker-publish.yml`](.github/workflows/docker-publish.yml)
+that builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes it
+to Docker Hub.
+
+### Required repository secrets
+
+Configure these under **Settings → Secrets and variables → Actions** on GitHub:
+
+| Secret | Description |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username. |
+| `DOCKERHUB_TOKEN` | A Docker Hub [access token](https://hub.docker.com/settings/security) with **Read & Write** scope. |
+| `DOCKERHUB_REPO` | *Optional.* Full repository name (e.g. `myorg/mongodb-backup-s3`). Defaults to `<DOCKERHUB_USERNAME>/<github-repo-name>` if unset. |
+
+### Triggers
+
+- Push to `master` / `main` → builds and pushes `:latest` + `:sha-<short>`.
+- Push a tag matching `v*` (e.g. `v1.2.3`) → pushes `:1.2.3`, `:1.2`, `:1`.
+- Pull request → builds only (no push), for verification.
+- Manual run (**Actions → Build and push Docker image → Run workflow**) — lets
+  you override `MONGO_TOOLS_VERSION` at dispatch time.
+
+### Cutting a release
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The workflow will publish:
+
+- `yourrepo/mongodb-backup-s3:1.0.0`
+- `yourrepo/mongodb-backup-s3:1.0`
+- `yourrepo/mongodb-backup-s3:1`
+- and `:latest` (when the tagged commit is on the default branch).
 
 ## Acknowledgements
 
-  * forked from [halvves/mongodb-backup-s3](https://github.com/halvves/mongodb-backup-s3) fork of [futurist](https://github.com/futurist)'s fork of [tutumcloud/mongodb-backup](https://github.com/tutumcloud/mongodb-backup)
+- Forked from [halvves/mongodb-backup-s3](https://github.com/halvves/mongodb-backup-s3)
+- Which was forked from [futurist's fork](https://github.com/futurist) of
+  [tutumcloud/mongodb-backup](https://github.com/tutumcloud/mongodb-backup)
