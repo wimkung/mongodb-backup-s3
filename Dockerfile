@@ -31,13 +31,15 @@ RUN set -eux; \
         xz-utils; \
     \
     # ---- MongoDB Database Tools (official .deb from mongodb.org) -------------
+    # Note: mongodb.org publishes debian12 builds only for x86_64. For arm64 we
+    # pull the ubuntu2204 arm64 .deb, which is ABI-compatible with bookworm.
     case "${TARGETARCH:-amd64}" in \
-        amd64) MDB_ARCH=x86_64 ; AWS_ARCH=x86_64 ;; \
-        arm64) MDB_ARCH=arm64  ; AWS_ARCH=aarch64 ;; \
+        amd64) MDB_DISTRO=debian12   ; MDB_ARCH=x86_64 ; AWS_ARCH=x86_64 ;; \
+        arm64) MDB_DISTRO=ubuntu2204 ; MDB_ARCH=arm64  ; AWS_ARCH=aarch64 ;; \
         *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     curl -fsSLo /tmp/mdbtools.deb \
-        "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian12-${MDB_ARCH}-${MONGO_TOOLS_VERSION}.deb"; \
+        "https://fastdl.mongodb.org/tools/db/mongodb-database-tools-${MDB_DISTRO}-${MDB_ARCH}-${MONGO_TOOLS_VERSION}.deb"; \
     apt-get install -y --no-install-recommends /tmp/mdbtools.deb; \
     rm -f /tmp/mdbtools.deb; \
     \

@@ -7,7 +7,7 @@ Guidance for AI coding agents working in this repo.
 A single Docker image that runs `cron` → `mongodump --archive --gzip` → `openssl smime -aes256` (asymmetric) → `aws s3 cp`. Restore reverses the pipeline with the RSA private key. There is **no application code** — everything is shell + Docker.
 
 Key files (whole codebase):
-- `Dockerfile` — `debian:bookworm-slim` + MongoDB Database Tools `100.x` (official `.deb`) + AWS CLI v2. Multi-arch via `TARGETARCH` → `MDB_ARCH`/`AWS_ARCH` mapping (`amd64→x86_64`, `arm64→aarch64`).
+- `Dockerfile` — `debian:bookworm-slim` + MongoDB Database Tools `100.x` (official `.deb`) + AWS CLI v2. Multi-arch via `TARGETARCH` → `MDB_DISTRO`/`MDB_ARCH`/`AWS_ARCH` mapping (`amd64→debian12/x86_64/x86_64`, `arm64→ubuntu2204/arm64/aarch64`). Note: mongodb.org doesn't publish a `debian12-arm64` `.deb`, so arm64 pulls the `ubuntu2204-arm64` build (ABI-compatible with bookworm).
 - `run.sh` — container entrypoint (`CMD`). **Generates** `/backup.sh`, `/restore.sh`, `/listbackups.sh` at runtime via heredocs, symlinks them into `/usr/bin`, then either runs `INIT_BACKUP`/`INIT_RESTORE` once and/or installs the crontab and `tail -f`s `/mongo_backup.log` as PID 1.
 - `docker-compose.yml`, `README.md` — usage docs.
 
