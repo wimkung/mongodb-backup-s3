@@ -23,6 +23,9 @@ Restore is performed with the matching private key.
 - Supports linked MongoDB containers — auto-detects host/port from the legacy
   Docker `*_PORT_27017_TCP_*` env vars.
 - `MONGODB_URI` for modern setups (replica sets, `mongodb+srv://`, Atlas, TLS).
+- AWS auth via the host EC2 instance profile / IAM role (no access keys
+  required). Static `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` still work
+  as an override.
 
 ## Compatibility
 
@@ -56,6 +59,11 @@ Mount `backup.crt` inside the container and point `BACKUP_PUBLIC_KEY` at it
 
 ## Quick start
 
+S3 uploads use the host EC2 instance profile by default. Attach an IAM role
+with S3 access to the instance and omit `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`. Pass those only if you need static keys (local
+dev, non-AWS hosts).
+
 ### Against a replica set / Atlas / TLS (recommended for MongoDB 5.0+)
 
 Use `MONGODB_URI` — it's passed through verbatim as `mongodump --uri=…`, so any
@@ -65,8 +73,6 @@ source, read preference, etc.):
 ```bash
 docker run -d \
   --name mongodb-backup-s3 \
-  -e AWS_ACCESS_KEY_ID=... \
-  -e AWS_SECRET_ACCESS_KEY=... \
   -e BUCKET=my-s3-bucket \
   -e BUCKET_REGION=us-east-1 \
   -e BACKUP_FOLDER=prod/mongo/ \
@@ -81,8 +87,6 @@ docker run -d \
 ```bash
 docker run -d \
   --name mongodb-backup-s3 \
-  -e AWS_ACCESS_KEY_ID=... \
-  -e AWS_SECRET_ACCESS_KEY=... \
   -e BUCKET=my-s3-bucket \
   -e BUCKET_REGION=us-east-1 \
   -e BACKUP_FOLDER=prod/mongo/ \
@@ -102,8 +106,6 @@ host/port:
 ```bash
 docker run -d \
   --link my_mongo_db:mongodb \
-  -e AWS_ACCESS_KEY_ID=... \
-  -e AWS_SECRET_ACCESS_KEY=... \
   -e BUCKET=my-s3-bucket \
   -e BACKUP_FOLDER=prod/mongo/ \
   -e INIT_BACKUP=true \
@@ -127,8 +129,6 @@ services:
       - BACKUP_PRIV
       - BACKUP_PUB
     environment:
-      - AWS_ACCESS_KEY_ID=...
-      - AWS_SECRET_ACCESS_KEY=...
       - BUCKET_REGION=us-east-1
       - BUCKET=my-s3-bucket
       - BACKUP_FOLDER=prod/mongo/
@@ -152,8 +152,6 @@ Seed / restore a fresh instance using `INIT_RESTORE` + `DISABLE_CRON`:
 mongodbbackup:
   image: deenoize/mongodb-backup-s3:latest
   environment:
-    - AWS_ACCESS_KEY_ID=...
-    - AWS_SECRET_ACCESS_KEY=...
     - BUCKET=my-s3-bucket
     - BACKUP_FOLDER=prod/mongo/
     - INIT_RESTORE=true
@@ -167,10 +165,24 @@ mongodbbackup:
 
 ### AWS / S3
 
+AWS CLI uses the default credential chain. On EC2 (or ECS), attach an IAM
+role with `s3:PutObject` / `s3:GetObject` / `s3:ListBucket` on the target
+bucket — no access keys needed. Static keys remain an optional override.
+
+If the container cannot reach IMDS (`Unable to locate credentials`), raise
+the instance metadata hop limit so IMDSv2 tokens survive the Docker bridge
+(default is `1`):
+
+```bash
+aws ec2 modify-instance-metadata-options \
+  --instance-id i-xxxxxxxx \
+  --http-put-response-hop-limit 2
+```
+
 | Variable | Description |
 | --- | --- |
-| `AWS_ACCESS_KEY_ID` | AWS access key with `s3:PutObject` / `s3:GetObject` on the bucket. |
-| `AWS_SECRET_ACCESS_KEY` | Matching secret key. |
+| `AWS_ACCESS_KEY_ID` | Optional. Static access key. Omit to use the host instance profile / task role. |
+| `AWS_SECRET_ACCESS_KEY` | Optional. Matching secret key. Only needed when `AWS_ACCESS_KEY_ID` is set. |
 | `BUCKET` | Target S3 bucket name. |
 | `BUCKET_REGION` | Optional. Bucket region (e.g. `us-east-2`). Set this if you see `PermanentRedirect` errors. |
 | `BACKUP_FOLDER` | Optional. Prefix/path inside the bucket (e.g. `myapp/db_backups/`). Defaults to bucket root. |

@@ -30,6 +30,12 @@ fi
 
 [[ -n "${MONGODB_DB}" ]] && DB_STR=" --db ${MONGODB_DB}"
 
+# Empty AWS_* keys win the credential chain and block EC2 instance-profile / IRSA.
+# Unset them so `aws` falls through to IMDS (or the task-role endpoint).
+[[ -z "${AWS_ACCESS_KEY_ID:-}" ]] && unset AWS_ACCESS_KEY_ID
+[[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]] && unset AWS_SECRET_ACCESS_KEY
+[[ -z "${AWS_SESSION_TOKEN:-}" ]] && unset AWS_SESSION_TOKEN
+
 # Export AWS Credentials into env file for cron job
 printenv | sed 's/^\([a-zA-Z0-9_]*\)=\(.*\)$/export \1="\2"/g' | grep -E "^export AWS" > /root/project_env.sh
 
