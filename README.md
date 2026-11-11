@@ -260,6 +260,11 @@ docker exec mongodb-backup-s3 restore 20260406T155812
 
 > Restore uses `mongorestore --drop`, which **drops each collection before
 > restoring it**. Be careful when pointing this at a live database.
+>
+> The `admin` database is skipped (`--nsExclude 'admin.*'`), so users and roles
+> are **not** restored. This avoids `system.version bson file does not have
+> authSchema document` failures on full-cluster dumps (e.g. from Atlas) and keeps
+> the target's own auth setup intact.
 
 ## Decrypting a backup outside the container
 
@@ -274,7 +279,7 @@ openssl cms -decrypt \
   -inkey backup.key \
   -out latest.dump.gz
 
-mongorestore --gzip --archive=latest.dump.gz --drop
+mongorestore --gzip --archive=latest.dump.gz --drop --nsExclude='admin.*'
 ```
 
 ## Logs
