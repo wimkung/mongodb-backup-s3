@@ -1,0 +1,23 @@
+run.sh
+  s_0317e50ce83f96::t_79afac02f9683f 74
+AGENTS.md
+  s_0317e50ce83f96::t_5b322179a0e93a 49
+README.md
+  s_0317e50ce83f96::t_5b322179a0e93a 263-267,282
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "7be51ac5b8b8e7e0731de35bb31d12bf7597d10d",
+  "prompts": {},
+  "sessions": {
+    "s_0317e50ce83f96": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5237aa04-3d7d-460f-a60d-766313d620b6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Nattapong Harnkwang <wimkung@gmail.com>"
+    }
+  }
+}
