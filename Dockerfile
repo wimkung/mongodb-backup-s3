@@ -26,6 +26,7 @@ RUN set -eux; \
         cron \
         gnupg \
         openssl \
+        python3-minimal \
         tzdata \
         unzip \
         xz-utils; \
@@ -58,7 +59,8 @@ RUN set -eux; \
     touch /mongo_backup.log
 
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
+COPY cms-decrypt-stream.py /usr/local/bin/cms-decrypt-stream
+RUN chmod +x /run.sh /usr/local/bin/cms-decrypt-stream
 
 CMD ["bash", "/run.sh"]
 

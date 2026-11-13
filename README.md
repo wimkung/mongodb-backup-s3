@@ -271,19 +271,25 @@ docker exec mongodb-backup-s3 restore 20260406T155812
 
 ## Decrypting a backup outside the container
 
-You can also decrypt an archive manually with OpenSSL and restore it with your
-own `mongorestore`:
+You can also decrypt an archive manually and restore it with your own
+`mongorestore`. Use [`cms-decrypt-stream.py`](cms-decrypt-stream.py) (needs only
+`python3` and the `openssl` CLI), which decrypts in constant memory:
 
 ```bash
 aws s3 cp s3://my-s3-bucket/prod/mongo/latest.dump.gz.ssl ./latest.dump.gz.ssl
 
-openssl cms -decrypt \
-  -in latest.dump.gz.ssl -binary -inform DER \
-  -inkey backup.key \
-  -out latest.dump.gz
+python3 cms-decrypt-stream.py backup.key latest.dump.gz.ssl latest.dump.gz
 
 mongorestore --gzip --archive=latest.dump.gz --drop --nsExclude='admin.*'
 ```
+
+Pass `-` as the output to pipe straight into `mongorestore --gzip --archive`
+without writing the decrypted file to disk.
+
+> `openssl cms -decrypt` only works for archives smaller than about **1.5 GiB**.
+> It reads the whole file into one buffer, and OpenSSL refuses to grow a buffer
+> past that size, failing with `BUF_MEM_grow_clean:malloc failure` no matter how
+> much RAM or swap is available.
 
 ## Logs
 
