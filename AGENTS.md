@@ -46,6 +46,6 @@ Releases: push to `master`/`main` or tag `vX.Y.Z` — `.github/workflows/docker-
 
 - Keep `run.sh` POSIX-ish bash and portable across Debian/Alpine (see cron fallback).
 - New env vars: document in `README.md`'s tables (AWS / MongoDB / Encryption / Scheduling sections) **and**, if needed at cron time, propagate via `project_env.sh`.
-- `mongorestore` is always invoked with `--drop` and `--nsExclude='admin.*'` (users/roles are not restored) — call this out in docs if you change it.
+- `mongorestore` is invoked with `--drop` (omitted when `RESTORE_DROP=false`, which skips docs whose `_id` already exists) and always `--nsExclude='admin.*'` (users/roles are not restored) — call this out in docs if you change it.
 - `EXTRA_OPTS` is appended verbatim to **both** `mongodump` and `mongorestore`; only add flags valid for both, or split into two vars.
 

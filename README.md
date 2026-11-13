@@ -220,6 +220,7 @@ variables are ignored.
 | `CRON_TZ` | Cron timezone. Default: `Europe/Berlin`. |
 | `INIT_BACKUP` | If set (non-empty), run a backup immediately on container start. |
 | `INIT_RESTORE` | If set, restore from the latest backup on container start. |
+| `RESTORE_DROP` | Default: `true` (restore with `--drop`). Set to `false` to restore without dropping: existing documents are kept, backup documents whose `_id` already exists are skipped (logged as duplicate key errors), and missing ones are inserted. Existing documents are not updated. |
 | `DISABLE_CRON` | If set, skip installing the cron job (useful for one-shot seed/restore containers). |
 
 ## Helper scripts
@@ -229,7 +230,7 @@ The entrypoint generates three scripts and symlinks them onto `PATH`:
 | Command | Description |
 | --- | --- |
 | `backup` (`/backup.sh`) | Dump, compress, encrypt, upload as `backup_<timestamp>.dump.gz.ssl` and `latest.dump.gz.ssl`. |
-| `restore [TIMESTAMP]` (`/restore.sh`) | Download, decrypt, and `mongorestore --drop` the given backup (defaults to `latest`). |
+| `restore [TIMESTAMP]` (`/restore.sh`) | Download, decrypt, and `mongorestore --drop` (or no `--drop` when `RESTORE_DROP=false`) the given backup (defaults to `latest`). |
 | `listbackups` (`/listbackups.sh`) | `aws s3 ls` the backup folder. |
 
 ### Trigger a backup on demand
@@ -260,6 +261,8 @@ docker exec mongodb-backup-s3 restore 20260406T155812
 
 > Restore uses `mongorestore --drop`, which **drops each collection before
 > restoring it**. Be careful when pointing this at a live database.
+> Set `RESTORE_DROP=false` to restore without dropping: documents whose `_id`
+> already exists are skipped (not updated) and only missing ones are inserted.
 >
 > The `admin` database is skipped (`--nsExclude 'admin.*'`), so users and roles
 > are **not** restored. This avoids `system.version bson file does not have
