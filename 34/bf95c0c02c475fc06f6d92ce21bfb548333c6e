@@ -1,0 +1,28 @@
+cms-decrypt-stream.py
+  s_e66dd7ca72c15d::t_db843a6f692799 1-173
+Dockerfile
+  s_e66dd7ca72c15d::t_1597a63adb226c 29,62-63
+run.sh
+  s_e66dd7ca72c15d::t_1597a63adb226c 78
+AGENTS.md
+  s_e66dd7ca72c15d::t_0d5c47db059103 7,11,22
+README.md
+  s_e66dd7ca72c15d::t_0d5c47db059103 274-276,281,286-292
+  s_e66dd7ca72c15d::t_7e2b205d12862c 293
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "34bf95c0c02c475fc06f6d92ce21bfb548333c6e",
+  "prompts": {},
+  "sessions": {
+    "s_e66dd7ca72c15d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6aa046d4-b7ac-45a0-945d-3fa33fccec6f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Nattapong Harnkwang <wimkung@gmail.com>"
+    }
+  }
+}
