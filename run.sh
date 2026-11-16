@@ -53,11 +53,12 @@ S3BACKUP=${S3PATH}\${BACKUP_NAME}
 S3LATEST=${S3PATH}latest.dump.gz
 aws configure set default.s3.signature_version s3v4
 echo "=> Backup started"
-if mongodump --forceTableScan${TARGET_STR}${DB_STR} --archive=\${BACKUP_NAME} --gzip ${EXTRA_OPTS} && openssl cms -encrypt -aes256 -binary -stream -in \${BACKUP_NAME} -outform DER -out \${BACKUP_NAME}.ssl \${BACKUP_PUBLIC_KEY} && aws s3 cp \${BACKUP_NAME}.ssl \${S3BACKUP}.ssl ${REGION_STR} && aws s3 cp \${BACKUP_NAME}.ssl \${S3LATEST}.ssl ${REGION_STR} && rm \${BACKUP_NAME} && rm \${BACKUP_NAME}.ssl ;then
+if mongodump --forceTableScan${TARGET_STR}${DB_STR} --archive=\${BACKUP_NAME} --gzip ${EXTRA_OPTS} && openssl cms -encrypt -aes256 -binary -stream -in \${BACKUP_NAME} -outform DER -out \${BACKUP_NAME}.ssl \${BACKUP_PUBLIC_KEY} && aws s3 cp \${BACKUP_NAME}.ssl \${S3BACKUP}.ssl ${REGION_STR} && aws s3 cp \${BACKUP_NAME}.ssl \${S3LATEST}.ssl ${REGION_STR}; then
     echo "   > Backup succeeded"
 else
     echo "   > Backup failed"
 fi
+rm -f \${BACKUP_NAME} \${BACKUP_NAME}.ssl
 echo "=> Done"
 EOF
 chmod +x /backup.sh
@@ -75,11 +76,12 @@ fi
 S3RESTORE=${S3PATH}\${RESTORE_ME}
 aws configure set default.s3.signature_version s3v4
 echo "=> Restore database from \${RESTORE_ME}"
-if aws s3 cp \${S3RESTORE}.ssl \${RESTORE_ME}.ssl ${REGION_STR} && cms-decrypt-stream \${BACKUP_PRIVATE_KEY} \${RESTORE_ME}.ssl \${RESTORE_ME} && mongorestore${TARGET_STR}${DB_STR}${DROP_STR} --nsExclude='admin.*' --archive=\${RESTORE_ME} --gzip ${EXTRA_OPTS} && rm \${RESTORE_ME} && rm \${RESTORE_ME}.ssl; then
+if aws s3 cp \${S3RESTORE}.ssl \${RESTORE_ME}.ssl ${REGION_STR} && cms-decrypt-stream \${BACKUP_PRIVATE_KEY} \${RESTORE_ME}.ssl \${RESTORE_ME} && mongorestore${TARGET_STR}${DB_STR}${DROP_STR} --nsExclude='admin.*' --archive=\${RESTORE_ME} --gzip ${EXTRA_OPTS}; then
     echo "   Restore succeeded"
 else
     echo "   Restore failed"
 fi
+rm -f \${RESTORE_ME} \${RESTORE_ME}.ssl
 echo "=> Done"
 EOF
 chmod +x /restore.sh
