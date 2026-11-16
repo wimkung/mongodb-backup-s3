@@ -1,0 +1,20 @@
+run.sh
+  s_ca0506c007e827::t_f0390553996a0a 56,61
+  s_ca0506c007e827::t_ae8b966d3b7a2c 79,84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "2f5dd3d282510c04d22dbd6e89936e96646d38d4",
+  "prompts": {},
+  "sessions": {
+    "s_ca0506c007e827": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "02f4c4b7-7f5f-4683-9f32-cb522eb95412",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Nattapong Harnkwang <wimkung@gmail.com>"
+    }
+  }
+}
