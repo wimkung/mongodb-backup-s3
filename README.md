@@ -263,6 +263,8 @@ docker exec mongodb-backup-s3 restore 20260406T155812
 > restoring it**. Be careful when pointing this at a live database.
 > Set `RESTORE_DROP=false` to restore without dropping: documents whose `_id`
 > already exists are skipped (not updated) and only missing ones are inserted.
+> The per-document `E11000 duplicate key` lines are filtered from the output;
+> the final `N document(s) failed to restore` summary still shows the count.
 >
 > The `admin` database is skipped (`--nsExclude 'admin.*'`), so users and roles
 > are **not** restored. This avoids `system.version bson file does not have

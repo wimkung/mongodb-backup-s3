@@ -76,7 +76,7 @@ fi
 S3RESTORE=${S3PATH}\${RESTORE_ME}
 aws configure set default.s3.signature_version s3v4
 echo "=> Restore database from \${RESTORE_ME}"
-if aws s3 cp \${S3RESTORE}.ssl \${RESTORE_ME}.ssl ${REGION_STR} && cms-decrypt-stream \${BACKUP_PRIVATE_KEY} \${RESTORE_ME}.ssl \${RESTORE_ME} && mongorestore${TARGET_STR}${DB_STR}${DROP_STR} --nsExclude='admin.*' --archive=\${RESTORE_ME} --gzip ${EXTRA_OPTS}; then
+if aws s3 cp \${S3RESTORE}.ssl \${RESTORE_ME}.ssl ${REGION_STR} && cms-decrypt-stream \${BACKUP_PRIVATE_KEY} \${RESTORE_ME}.ssl \${RESTORE_ME} && mongorestore${TARGET_STR}${DB_STR}${DROP_STR} --nsExclude='admin.*' --archive=\${RESTORE_ME} --gzip ${EXTRA_OPTS} 2> >(grep -v 'continuing through error: E11000 duplicate key error' >&2); then
     echo "   Restore succeeded"
 else
     echo "   Restore failed"
@@ -109,7 +109,7 @@ fi
 
 if [[ -n "${INIT_RESTORE}" ]]; then
     echo "=> Restore store from lastest backup on startup"
-    sh /restore.sh
+    bash /restore.sh
 fi
 
 if [[ -z "${DISABLE_CRON}" ]]; then
