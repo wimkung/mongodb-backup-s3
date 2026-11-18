@@ -40,8 +40,8 @@ fi
 [[ -z "${AWS_SECRET_ACCESS_KEY:-}" ]] && unset AWS_SECRET_ACCESS_KEY
 [[ -z "${AWS_SESSION_TOKEN:-}" ]] && unset AWS_SESSION_TOKEN
 
-# Export AWS Credentials into env file for cron job
-printenv | sed 's/^\([a-zA-Z0-9_]*\)=\(.*\)$/export \1="\2"/g' | grep -E "^export AWS" > /root/project_env.sh
+# Export AWS credentials and the backup cert path into env file for cron job
+printenv | sed 's/^\([a-zA-Z0-9_]*\)=\(.*\)$/export \1="\2"/g' | grep -E "^export (AWS|BACKUP_PUBLIC_KEY=)" > /root/project_env.sh
 
 echo "=> Creating backup script"
 rm -f /backup.sh
